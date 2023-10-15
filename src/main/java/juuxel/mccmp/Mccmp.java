@@ -31,10 +31,12 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executors;
+import java.util.regex.Pattern;
 
 @CommandLine.Command(name = "mccmp", mixinStandardHelpOptions = true)
 public final class Mccmp implements Runnable {
     private static final String MANIFEST_URL = "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json";
+    private static final Pattern SYNTHETIC_LV_NAME_PATTERN = Pattern.compile("^☃|\\$\\$[0-9]+$");
 
     @CommandLine.Parameters(index = "0", arity = "1")
     public String fromVersion;
@@ -137,6 +139,8 @@ public final class Mccmp implements Runnable {
                 TinyRemapper remapper = TinyRemapper.newRemapper()
                     .threads(Runtime.getRuntime().availableProcessors() / 2)
                     .withMappings(mappingProvider)
+                    .renameInvalidLocals(true)
+                    .invalidLvNamePattern(SYNTHETIC_LV_NAME_PATTERN)
                     .build();
 
                 try (var outputConsumer = new OutputConsumerPath.Builder(remappedJarPath).build()) {
