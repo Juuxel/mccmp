@@ -74,7 +74,8 @@ public final class Mccmp implements Runnable {
                     var toLibrary = libraryForMinecraft(toManifest);
                     allLibraries.add(fromLibrary);
                     allLibraries.add(toLibrary);
-                    CompletableFuture.allOf(
+
+                    var libraryFuture = CompletableFuture.allOf(
                             allLibraries.stream()
                                 .map(library -> {
                                     Path path = libraryDir.resolve(library.downloads().artifact().path());
@@ -86,11 +87,10 @@ public final class Mccmp implements Runnable {
                                     return Download.file(path, library.downloads().artifact().url());
                                 })
                                 .toArray(CompletableFuture[]::new)
-                        )
-                        .join();
-
-                    return resolveMetadata(libraryDir, fromManifest)
+                        );
+                    var metadataFuture = resolveMetadata(libraryDir, fromManifest)
                         .thenCombine(resolveMetadata(libraryDir, toManifest), Pair::new);
+                    return libraryFuture.thenCombine(metadataFuture, (unused, pair) -> pair);
                 }));
             })
             .join();
