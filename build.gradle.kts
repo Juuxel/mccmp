@@ -30,6 +30,7 @@ dependencies {
     implementation("org.vineflower:vineflower:1.10.0-SNAPSHOT")
     implementation("net.neoforged:DiffPatch:2.0.14")
     implementation("net.fabricmc:tiny-remapper:0.8.10")
+    compileOnly("org.jetbrains:annotations:24.0.1")
 }
 
 indraSpotlessLicenser {

@@ -6,6 +6,7 @@
 
 package juuxel.mccmp;
 
+import com.squareup.moshi.JsonAdapter;
 import com.squareup.moshi.Moshi;
 
 import java.io.IOException;
@@ -19,6 +20,8 @@ import java.nio.file.Path;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.function.Function;
+import java.util.function.Supplier;
 
 public final class Download {
     static final ExecutorService EXECUTOR = Executors.newFixedThreadPool(16);
@@ -37,46 +40,51 @@ public final class Download {
     }
 
     public static <T> CompletableFuture<T> json(String url, Class<T> clazz) {
-        return download(url, responseInfo -> {
-            if (responseInfo.statusCode() == 200) {
-                return HttpResponse.BodySubscribers.ofString(StandardCharsets.UTF_8);
-            }
-
-            throw new RuntimeException("Status code: " + responseInfo.statusCode());
-        }).thenApply(response -> {
-            try {
-                return MOSHI.adapter(clazz).fromJson(response.body());
-            } catch (IOException e) {
-                throw new RuntimeException(e);
-            }
-        });
+        return json(url, moshi -> moshi.adapter(clazz));
     }
 
     public static <T> CompletableFuture<T> json(String url, TypeToken<T> type) {
-        return download(url, responseInfo -> {
-            if (responseInfo.statusCode() == 200) {
-                return HttpResponse.BodySubscribers.ofString(StandardCharsets.UTF_8);
-            }
+        return json(url, moshi -> moshi.adapter(type.type()));
+    }
 
-            throw new RuntimeException("Status code: " + responseInfo.statusCode());
-        }).thenApply(response -> {
-            try {
-                return MOSHI.<T>adapter(type.type()).fromJson(response.body());
-            } catch (IOException e) {
-                throw new RuntimeException(e);
-            }
-        });
+    private static <T> CompletableFuture<T> json(String url, Function<Moshi, JsonAdapter<T>> adapterGetter) {
+        return download(url, checkStatus(() -> HttpResponse.BodySubscribers.ofString(StandardCharsets.UTF_8)))
+            .thenApply(response -> {
+                try {
+                    return adapterGetter.apply(MOSHI).fromJson(response.body());
+                } catch (IOException e) {
+                    throw new RuntimeException(e);
+                }
+            });
     }
 
     public static CompletableFuture<Path> file(Path path, String url) {
         if (Files.exists(path)) return CompletableFuture.completedFuture(path);
 
-        return download(url, responseInfo -> {
+        return download(url, checkStatus(() -> HttpResponse.BodySubscribers.ofFile(path)))
+            .thenApply(HttpResponse::body);
+    }
+
+    private static <T> HttpResponse.BodyHandler<T> checkStatus(Supplier<HttpResponse.BodySubscriber<T>> bodyHandler) {
+        return responseInfo -> {
             if (responseInfo.statusCode() == 200) {
-                return HttpResponse.BodySubscribers.ofFile(path);
+                return bodyHandler.get();
             }
 
-            throw new RuntimeException("Status code: " + responseInfo.statusCode());
-        }).thenApply(HttpResponse::body);
+            throw new StatusCodeException(responseInfo.statusCode());
+        };
+    }
+
+    public static final class StatusCodeException extends RuntimeException {
+        private final int statusCode;
+
+        public StatusCodeException(int statusCode) {
+            super("Status code: " + statusCode);
+            this.statusCode = statusCode;
+        }
+
+        public int statusCode() {
+            return statusCode;
+        }
     }
 }

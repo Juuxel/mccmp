@@ -31,6 +31,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executors;
+import java.util.function.Supplier;
 import java.util.regex.Pattern;
 
 @CommandLine.Command(name = "mccmp", mixinStandardHelpOptions = true)
@@ -170,17 +171,24 @@ public final class Mccmp implements Runnable {
         return Download.json("https://meta.fabricmc.net/v2/versions/yarn/" + manifest.id(), new TypeToken<List<YarnVersion>>() {})
             .thenCompose(yarnVersions -> {
                 String yarnVersion = yarnVersions.get(0).version();
-                var yarnPathStr = "net/fabricmc/yarn/" + yarnVersion + "/yarn-" + yarnVersion + "-mergedv2.jar";
-                var yarnUrl = "https://maven.fabricmc.net/" + yarnPathStr;
-                var yarnPath = libraryDir.resolve(yarnPathStr);
+                var yarnMergedV2 = new DependencyCoordinates("net.fabricmc", "yarn", yarnVersion, "mergedv2");
+                var yarnV1 = new DependencyCoordinates("net.fabricmc", "yarn", yarnVersion);
 
                 try {
-                    Files.createDirectories(yarnPath.getParent());
+                    Files.createDirectories(libraryDir.resolve(yarnMergedV2.toUrlPart()).getParent());
                 } catch (IOException e) {
                     throw new UncheckedIOException(e);
                 }
 
-                return Download.file(yarnPath, yarnUrl).thenApply(yarnJar -> {
+                List<Supplier<CompletableFuture<Path>>> downloads = List.of(
+                    () -> Download.file(libraryDir.resolve(yarnMergedV2.toUrlPart()), yarnMergedV2.toFabricMavenUrl()),
+                    () -> Download.file(libraryDir.resolve(yarnV1.toUrlPart()), yarnV1.toFabricMavenUrl())
+                );
+
+                return Futures.runFirstSuccessful(
+                    t -> t instanceof Download.StatusCodeException e && e.statusCode() == 404,
+                    downloads
+                ).thenApply(yarnJar -> {
                     var mcPathStr = libraryForMinecraft(manifest).downloads().artifact().path();
                     var mcPath = libraryDir.resolve(mcPathStr);
                     return new MinecraftMetadata(manifest.id(), manifest, mcPath, yarnJar);
