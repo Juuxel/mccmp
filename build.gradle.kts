@@ -30,6 +30,9 @@ dependencies {
     implementation("org.vineflower:vineflower:1.10.0-SNAPSHOT")
     implementation("net.neoforged:DiffPatch:2.0.14")
     implementation("net.fabricmc:tiny-remapper:0.8.10")
+    implementation("net.fabricmc:stitch:0.6.2") {
+        exclude(module = "guava")
+    }
     compileOnly("org.jetbrains:annotations:24.0.1")
 }
 

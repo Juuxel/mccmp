@@ -131,34 +131,31 @@ public final class Mccmp implements Runnable {
 
         System.out.println(":remapping " + metadata.id() + " with " + metadata.mappingsJar().getFileName());
 
-        try (var fs = FileSystemReference.openJar(metadata.mappingsJar(), false)) {
-            var mappingsPath = fs.getPath("mappings", "mappings.tiny");
+        try {
+            var mappingsPath = Mappings.extractMappings(metadata.gameJar(), metadata.mappingsJar());
+            var mappingProvider = TinyUtils.createTinyMappingProvider(mappingsPath, "official", "named");
 
-            try (var reader = Files.newBufferedReader(mappingsPath)) {
-                var mappingProvider = TinyUtils.createTinyMappingProvider(reader, "official", "named");
+            TinyRemapper remapper = TinyRemapper.newRemapper()
+                .threads(Runtime.getRuntime().availableProcessors() / 2)
+                .withMappings(mappingProvider)
+                .renameInvalidLocals(true)
+                .invalidLvNamePattern(SYNTHETIC_LV_NAME_PATTERN)
+                .build();
 
-                TinyRemapper remapper = TinyRemapper.newRemapper()
-                    .threads(Runtime.getRuntime().availableProcessors() / 2)
-                    .withMappings(mappingProvider)
-                    .renameInvalidLocals(true)
-                    .invalidLvNamePattern(SYNTHETIC_LV_NAME_PATTERN)
-                    .build();
+            try (var outputConsumer = new OutputConsumerPath.Builder(remappedJarPath).build()) {
+                outputConsumer.addNonClassFiles(metadata.gameJar(), NonClassCopyMode.SKIP_META_INF, remapper);
 
-                try (var outputConsumer = new OutputConsumerPath.Builder(remappedJarPath).build()) {
-                    outputConsumer.addNonClassFiles(metadata.gameJar(), NonClassCopyMode.SKIP_META_INF, remapper);
+                Path[] libraries = metadata.manifest()
+                    .libraries()
+                    .stream()
+                    .map(library -> libraryDir.resolve(library.downloads().artifact().path()))
+                    .toArray(Path[]::new);
 
-                    Path[] libraries = metadata.manifest()
-                        .libraries()
-                        .stream()
-                        .map(library -> libraryDir.resolve(library.downloads().artifact().path()))
-                        .toArray(Path[]::new);
-
-                    remapper.readClassPath(libraries);
-                    remapper.readInputs(metadata.gameJar());
-                    remapper.apply(outputConsumer);
-                } finally {
-                    remapper.finish();
-                }
+                remapper.readClassPath(libraries);
+                remapper.readInputs(metadata.gameJar());
+                remapper.apply(outputConsumer);
+            } finally {
+                remapper.finish();
             }
         } catch (IOException e) {
             throw new UncheckedIOException(e);
